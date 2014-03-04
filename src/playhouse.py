@@ -54,6 +54,8 @@ class Bridge:
         self.bridge_async = AsyncHTTPClient()
         self.bridge_sync = tornado.httpclient.HTTPClient()
         self.timeout = timeout
+        self.light_data = None
+        
         
         try:
             if self.send_request("GET", "/config")['name'] != "Philips hue":
@@ -72,8 +74,11 @@ class Bridge:
         except:
             raise Exception("{}: not a Philips Hue bridge".format(ip))
         
+
+
         self.update_info()
-    
+        
+            
     
     def set_defaults(self, defaults):
         self.defaults = defaults
@@ -130,7 +135,32 @@ class Bridge:
         return self.send_request("PUT", url, defs, async=True)
     
     def set_state(self, i, **args):
-        return self._set_state('/lights/{}/state'.format(i), args)
+        defs = self.defaults.copy()
+        defs.update(args)
+        
+        if 'rgb' in defs:
+            defs['xy'] = rgb2xy(*defs['rgb'])
+            del defs['rgb']
+        print(defs)
+        savedstate = self.light_data[i]
+        print(savedstate)
+        # Now we filter away redundant instructions
+        removekeys = set()
+        for k, v in defs.items():
+            saved = savedstate.get(k)
+            if saved is None or saved == v:
+                removekeys.add(k)
+                
+        for k in removekeys:
+            del defs[k]
+        print(defs)
+        if not defs:
+            return None
+        else:
+            self.light_data[i].update(defs)
+            return self.send_request("PUT", 
+        '/lights/{}/state'.format(i), defs, async=True)
+
     
     def set_group(self, i, **args):
         return self._set_state('/groups/{}/action'.format(i), args)
@@ -160,8 +190,18 @@ class Bridge:
         self.update_info()
         return self.username
     
+
+    
     def update_info(self):
-        info = self.send_request("GET", "/config")
+        if self.username is not None and self.light_data is None:
+            sync = self.send_request("GET", "/")
+            lights = sync["lights"]
+            self.light_data = dict()
+            for light, state in lights.items():
+                self.light_data[int(light)] = state["state"]
+            info = sync["config"]
+        else:    
+            info = self.send_request("GET", "/config")
         
         if self.username is None or 'mac' not in info:
             self.logged_in = False
@@ -194,15 +234,6 @@ class LightGrid:
             if bridge.serial_number in usernames:
                 bridge.set_username(usernames[bridge.serial_number])"""
         self.set_grid(grid)
-        
-        #self.state = {}
-        #self._synchronize_state()
-        
-#    def _synchronize_state(self):
-#        for mac, bridge in self.bridges.items():
-#            data = self._send_request(bridge, "GET", "/")
-#            for k, v in data["lights"].items():
-#                self.state[(mac, int(k))] = v["state"]
                     
     
     def add_bridge(self, ip_address_or_bridge, username=None):

@@ -145,8 +145,13 @@ class Bridge:
         savedstate = self.light_data[i]
         print(savedstate)
         # Now we filter away redundant instructions
+       
         removekeys = set()
+        ignoredkeys = set("on", "alert", "effect", "transitiontime")
+        # These keys will never be removed
         for k, v in defs.items():
+            if k in ignoredkeys:
+                continue
             saved = savedstate.get(k)
             if saved is None or saved == v:
                 removekeys.add(k)
